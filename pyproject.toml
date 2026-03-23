@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soft-entropy"
+version = "0.1.1"
+description = "GPU Accelerated soft entropy and mutual information estimator for embeddings"
+requires-python = ">=3.9"
+dependencies = ["numpy", "torch", "jax", "jupyter"]
+readme = "README.md"
+
+[tool.setuptools.packages.find]
+include = ["soft_entropy*"]
+
