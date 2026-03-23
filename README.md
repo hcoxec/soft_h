@@ -1,5 +1,8 @@
 # Soft Entropy Estimator
 
+[![PyPI version](https://img.shields.io/pypi/v/soft-entropy)](https://pypi.org/project/soft-entropy/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/soft-entropy)](https://pypi.org/project/soft-entropy/)
+
 Implementation of the soft entropy estimator from [Conklin (2025)](https://arxiv.org/pdf/2505.23960), as used in *Learning is Forgetting: LLM Training as Lossy Compression* (Conklin et al., ICLR 2026).
 
 ---
@@ -10,7 +13,15 @@ Implementation of the soft entropy estimator from [Conklin (2025)](https://arxiv
 pip install soft-entropy
 ```
 
-JAX and PyTorch are included by default. To install from source:
+JAX and PyTorch are included by default. To also install Jupyter:
+
+```bash
+pip install soft-entropy[nb]
+```
+
+On Google Colab, where Jupyter is pre-installed, the default install works as-is.
+
+To install from source:
 
 ```bash
 git clone https://github.com/...
@@ -179,7 +190,7 @@ acc.reset()   # clears all counts, keeps reference points W
 
 ---
 
-## Regularity and Optimality
+## Efficiency, Regularity, and Optimality
 
 *Efficiency* is entropy normalised by its maximum possible value:
 
