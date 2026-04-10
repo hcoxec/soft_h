@@ -32,12 +32,14 @@ from collections import defaultdict
 from typing import Any
 import math
 
+from soft_entropy.temp_calibration import find_eps
+
 
 # ---------------------------------------------------------------------------
 # Backend abstraction
 # ---------------------------------------------------------------------------
 
-def _get_ops(backend: str):
+def _get_ops(backend: str, dtype=None):
     """Return a namespace of array operations for the requested backend."""
     if backend == "numpy":
         import numpy as np
@@ -76,14 +78,16 @@ def _get_ops(backend: str):
         else:
             device = torch.device("cpu")
 
+        dtype = dtype or torch.float32
+
         class TorchOps:
             def zeros(self, shape):
-                return torch.zeros(shape, device=device)
+                return torch.zeros(shape, device=device, dtype=dtype)
             def normalize(self, x):
                 return F.normalize(x, dim=-1)
             def randn(self, shape, seed):
                 g = torch.Generator(device=device).manual_seed(seed)
-                return torch.randn(*shape, generator=g, device=device)
+                return torch.randn(*shape, generator=g, device=device, dtype=dtype)
             def softmax(self, x, temp):
                 return F.softmax(x / temp, dim=-1)
             def matmul(self, a, b):
@@ -91,9 +95,9 @@ def _get_ops(backend: str):
             def sum_axis0(self, x):
                 return x.sum(0)
             def to_device(self, x):
-                return x.to(device)
+                return x.to(device=device, dtype=dtype)
             def to_numpy(self, x):
-                return x.detach().cpu().numpy()
+                return x.detach().cpu().float().numpy()
 
         return TorchOps()
 
@@ -101,13 +105,15 @@ def _get_ops(backend: str):
         import jax
         import jax.numpy as jnp
 
+        jax_dtype = dtype or jnp.float32
+
         class JaxOps:
             def zeros(self, shape):
-                return jnp.zeros(shape, dtype=jnp.float32)
+                return jnp.zeros(shape, dtype=jax_dtype)
             def normalize(self, x):
                 return x / jnp.linalg.norm(x, axis=-1, keepdims=True)
             def randn(self, shape, seed):
-                return jax.random.normal(jax.random.PRNGKey(seed), shape=shape)
+                return jax.random.normal(jax.random.PRNGKey(seed), shape=shape, dtype=jax_dtype)
             def softmax(self, x, temp):
                 return jax.nn.softmax(x / temp, axis=-1)
             def matmul(self, a, b):
@@ -115,10 +121,10 @@ def _get_ops(backend: str):
             def sum_axis0(self, x):
                 return x.sum(axis=0)
             def to_device(self, x):
-                return x  # JAX places arrays on GPU automatically via XLA
+                return x.astype(jax_dtype)  # JAX places arrays on GPU automatically via XLA
             def to_numpy(self, x):
                 import numpy as np
-                return np.array(x)
+                return np.array(x, dtype=np.float32)
 
         return JaxOps()
 
@@ -149,15 +155,18 @@ class SoftEntropyAccumulator:
         n_bins:  number of random reference points on the unit sphere
         seed:    random seed for reference point sampling (fixed across batches)
         backend: one of 'numpy', 'torch', 'jax'
+        dtype:   torch dtype for reference points and counts (torch backend only);
+                 defaults to torch.float32. Pass e.g. torch.bfloat16 to match a
+                 model that outputs bfloat16 and avoid casting overhead.
     """
 
-    def __init__(self, d: int, n_bins: int = 100, seed: int = 0, backend: str = "numpy"):
+    def __init__(self, d: int, n_bins: int = 100, seed: int = 0, backend: str = "numpy", dtype=None):
         self.n_bins = n_bins
         self.backend = backend
-        self.ops = _get_ops(backend)
+        self.ops = _get_ops(backend, dtype=dtype)
 
         # temperature calibrated per dimensionality (eq. 7 in the paper)
-        self.temp = 1.0 / math.sqrt(2 * d * math.log(n_bins))
+        self.temp = find_eps(n_bins, d)
 
         # reference points — sampled once, reused every batch
         w = self.ops.randn((n_bins, d), seed)

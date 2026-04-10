@@ -7,11 +7,12 @@ name = "soft-entropy"
 version = "0.1.1"
 description = "GPU Accelerated soft entropy and mutual information estimator for embeddings"
 requires-python = ">=3.9"
-dependencies = ["numpy", "torch", "jax"]
+dependencies = ["numpy", "scipy", "matplotlib", "torch", "jax"]
 readme = "README.md"
 
 [project.optional-dependencies]
-nb = ["jupyter"]
+nb  = ["jupyter"]
+llm = ["transformers", "datasets", "tqdm", "accelerate"]
 
 [tool.setuptools.packages.find]
 include = ["soft_entropy*"]
