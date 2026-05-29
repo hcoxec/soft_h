@@ -2,8 +2,10 @@ import jax
 import jax.numpy as jnp
 import math
 
+from soft_entropy.temp_calibration import find_eps
 
-def soft_entropy(z: jax.Array, n_bins: int = 100, seed: int = 0) -> jax.Array:
+
+def soft_entropy(z: jax.Array, n_bins: int = 100, seed: int = 0, calibration: str = "find_eps") -> jax.Array:
     """
     Soft entropy estimator from Conklin (2025).
 
@@ -18,15 +20,18 @@ def soft_entropy(z: jax.Array, n_bins: int = 100, seed: int = 0) -> jax.Array:
         z: embeddings of shape [batch, d]
         n_bins: number of reference points to sample
         seed: random seed for sampling reference points
+        calibration: "find_eps" (default) solves KL(vMF || U) = log(m) exactly;
+                     "leading_order" uses eps* = 1 / sqrt(2 * d * log(n))
 
     Returns:
         scalar entropy estimate (efficiency-normalized, in [0, 1])
     """
     d = z.shape[-1]
 
-    # temperature calibrated to prevent saturation across dimensionalities
-    # epsilon* = 1 / sqrt(2 * d * log(n))
-    temp = 1.0 / math.sqrt(2 * d * math.log(n_bins))
+    if calibration == "find_eps":
+        temp = find_eps(n_bins, d)
+    else:
+        temp = 1.0 / math.sqrt(2 * d * math.log(n_bins))
 
     # normalize embeddings to unit sphere
     z_norm = z / jnp.linalg.norm(z, axis=-1, keepdims=True)  # [batch, d]
@@ -54,7 +59,7 @@ def soft_entropy(z: jax.Array, n_bins: int = 100, seed: int = 0) -> jax.Array:
     return h / h_uniform
 
 
-def soft_mutual_information(z: jax.Array, labels: jax.Array, n_bins: int = 100, seed: int = 0) -> jax.Array:
+def soft_mutual_information(z: jax.Array, labels: jax.Array, n_bins: int = 100, seed: int = 0, calibration: str = "find_eps") -> jax.Array:
     """
     Estimates I(X; Z) = H(Z) - sum_x P(X=x) H(Z | X=x).
 
@@ -63,18 +68,19 @@ def soft_mutual_information(z: jax.Array, labels: jax.Array, n_bins: int = 100, 
         labels: integer class labels of shape [batch]
         n_bins: number of reference points
         seed: random seed for sampling reference points
+        calibration: temperature calibration method, passed through to soft_entropy
 
     Returns:
         scalar mutual information estimate (efficiency-normalized)
     """
-    h_z = soft_entropy(z, n_bins, seed)
+    h_z = soft_entropy(z, n_bins, seed, calibration)
 
     unique_labels = jnp.unique(labels)
     conditional_h = 0.0
     for label in unique_labels:
         mask = labels == label
         p_label = mask.mean()
-        h_z_given_label = soft_entropy(z[mask], n_bins, seed)
+        h_z_given_label = soft_entropy(z[mask], n_bins, seed, calibration)
         conditional_h = conditional_h + p_label * h_z_given_label
 
     return h_z - conditional_h

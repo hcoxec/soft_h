@@ -2,8 +2,10 @@ import torch
 import torch.nn.functional as F
 import math
 
+from soft_entropy.temp_calibration import find_eps
 
-def soft_entropy(z: torch.Tensor, n_bins: int = 100, seed: int = 0) -> torch.Tensor:
+
+def soft_entropy(z: torch.Tensor, n_bins: int = 100, seed: int = 0, calibration: str = "find_eps") -> torch.Tensor:
     """
     Soft entropy estimator from Conklin (2025).
 
@@ -18,15 +20,18 @@ def soft_entropy(z: torch.Tensor, n_bins: int = 100, seed: int = 0) -> torch.Ten
         z: embeddings of shape [batch, d]
         n_bins: number of reference points to sample
         seed: random seed for sampling reference points
+        calibration: "find_eps" (default) solves KL(vMF || U) = log(m) exactly;
+                     "leading_order" uses eps* = 1 / sqrt(2 * d * log(n))
 
     Returns:
         scalar entropy estimate (efficiency-normalized, in [0, 1])
     """
     batch, d = z.shape
 
-    # temperature calibrated to prevent saturation across dimensionalities
-    # epsilon* = 1 / sqrt(2 * d * log(n))
-    temp = 1.0 / math.sqrt(2 * d * math.log(n_bins))
+    if calibration == "find_eps":
+        temp = find_eps(n_bins, d)
+    else:
+        temp = 1.0 / math.sqrt(2 * d * math.log(n_bins))
 
     # normalize embeddings to unit sphere
     z_norm = F.normalize(z, dim=-1)  # [batch, d]
@@ -54,7 +59,7 @@ def soft_entropy(z: torch.Tensor, n_bins: int = 100, seed: int = 0) -> torch.Ten
     return h / h_uniform
 
 
-def soft_mutual_information(z: torch.Tensor, labels: torch.Tensor, n_bins: int = 100) -> torch.Tensor:
+def soft_mutual_information(z: torch.Tensor, labels: torch.Tensor, n_bins: int = 100, calibration: str = "find_eps") -> torch.Tensor:
     """
     Estimates I(X; Z) = H(Z) - sum_x P(X=x) H(Z | X=x).
 
@@ -62,18 +67,19 @@ def soft_mutual_information(z: torch.Tensor, labels: torch.Tensor, n_bins: int =
         z: embeddings of shape [batch, d]
         labels: integer class labels of shape [batch]
         n_bins: number of reference points
+        calibration: temperature calibration method, passed through to soft_entropy
 
     Returns:
         scalar mutual information estimate (efficiency-normalized)
     """
-    h_z = soft_entropy(z, n_bins)
+    h_z = soft_entropy(z, n_bins, calibration=calibration)
 
     unique_labels = labels.unique()
     conditional_h = 0.0
     for label in unique_labels:
         mask = labels == label
         p_label = mask.float().mean()
-        h_z_given_label = soft_entropy(z[mask], n_bins)
+        h_z_given_label = soft_entropy(z[mask], n_bins, calibration=calibration)
         conditional_h = conditional_h + p_label * h_z_given_label
 
     return h_z - conditional_h

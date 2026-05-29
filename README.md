@@ -41,7 +41,7 @@ Soft Entropy estimates the entropy of a distribution over embeddings without sto
 1. **Normalise** each embedding onto the unit sphere.
 2. **Sample** `n` reference points `W` uniformly from the unit sphere (once, by drawing from a standard normal and normalising).
 3. **Compute Distances** comparing each `z` to all the reference points `W`. Usually cosine similarites are used.
-4. **Soft-assign** `z` to reference points by passing the distances through a softmax with a calibrated temperature `ε* = 1 / sqrt(2d · log(n))`. This gives each embedding a probability vector over the `n` bins.
+4. **Soft-assign** `z` to reference points by passing the distances through a softmax with a calibrated temperature `ε*`. By default, `ε*` is found by solving `KL(vMF(ε) ‖ Uniform) = log(n)` via bracketed root-finding (`calibration="find_eps"`), which ensures the soft assignments are well-spread across bins at any dimensionality. A closed-form leading-order approximation `ε* = 1 / sqrt(2d · log(n))` is also available via `calibration="leading_order"`. This gives each embedding a probability vector over the `n` bins.
 5. **Aggregate & Compute Entropy** we average the probability vectors over the batch to get a single distribution `P(Z)` over bins. Computing the Shannon entropy `H(Z)` is then just `-Σ P(Z) log P(Z)`. In practice we usually normalise this by maximum entropy `log(n)` so it lives in `[0, 1]` (called *efficiency*).
 
 Conditioning on a label `x` is done by repeating step 5 on only the embeddings where the label equals `x`. Mutual information then follows as:
@@ -58,10 +58,11 @@ The temperature calibration ensures estimates are directly comparable across mod
 
 ```
 soft_entropy/
-├── pytorch.py      # PyTorch implementation
-├── numpy.py        # NumPy implementation
-├── jax.py          # JAX implementation
-└── accumulator.py  # Backend-agnostic batch accumulator
+├── pytorch.py           # PyTorch implementation
+├── numpy.py             # NumPy implementation
+├── jax.py               # JAX implementation
+├── accumulator.py       # Backend-agnostic batch accumulator
+└── temp_calibration.py  # Temperature calibration (find_eps, sphere_temp_calibration)
 
 soft_entropy.R      # R implementation
 examples_MNIST.ipynb
@@ -74,14 +75,15 @@ examples_MNIST.ipynb
 Each backend module exposes two functions with the same interface:
 
 ```python
-soft_entropy(z, n_bins=100, seed=0) -> scalar
-soft_mutual_information(z, labels, n_bins=100, seed=0) -> scalar
+soft_entropy(z, n_bins=100, seed=0, calibration="find_eps") -> scalar
+soft_mutual_information(z, labels, n_bins=100, seed=0, calibration="find_eps") -> scalar
 ```
 
 - `z`: embeddings `[batch, d]`
 - `labels`: 1-D integer array of class labels `[batch]`
 - `n_bins`: number of reference points (default 100; robust to this choice)
 - `seed`: random seed used to sample the reference points `W`
+- `calibration`: `"find_eps"` (default) solves `KL(vMF(ε) ‖ Uniform) = log(n)` for the temperature; `"leading_order"` uses the closed-form approximation `ε* = 1 / sqrt(2d · log(n))`
 
 **The seed is the key to cross-model comparability.** Because entropy is measured relative to the same fixed reference points, two calls with the same `seed`, `d` and `n_bins` are operating in the same "coordinate system" — so their H(Z) and I(X;Z) values are directly comparable even if the embeddings come from different models, layers, or datasets. Always use the same seed when comparing estimates.
 
